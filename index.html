@@ -1,0 +1,194 @@
+﻿<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+    <head runat="server">
+        <title>Drag Select</title>
+        <link rel="stylesheet" href="http://js.arcgis.com/3.13/dijit/themes/claro/claro.css" />
+        <link rel="stylesheet" href="http://js.arcgis.com/3.13/esri/css/esri.css" />
+        <script type="text/javascript" data-dojo-config="async:true" src="http://ajax.googleapis.com/ajax/libs/dojo/1.9.1/dojo/dojo.js"></script>
+
+        <style type="text/css">
+            body {
+                margin: 0px;
+            }
+
+            .toolbar {
+                position: absolute;
+                z-index: 100;
+                display: block;
+                background-color: white;
+                margin-top: 25px;
+                right: 0px;
+            }
+
+            .toolbarElem {
+                margin-left: 20px;
+            }
+        </style>
+    </head>
+    <body style="width:100%;height:100%;">
+        <div id="selected" style="height:55px;overflow-y:scroll;"></div>
+        <div class="toolbar">
+            <span>Select By Shape</span><br />
+            <input class="toolbarElem" id="toolbarExtent" type="button" value="Select By Extent" /><br /><br />
+            <input class="toolbarElem" id="clearFeatures" type="button" value="Clear Selections" /><br />
+        </div>
+        <div id="map" style="width:100%;height:90%;"></div>
+
+        <script type="text/javascript">
+                "use strict";
+
+                var map;
+
+                require({
+                    packages: [
+                        {
+                            name: "esri",
+                            location: "http://js.arcgis.com/3.13/esri"
+                        }
+                    ]
+                });
+
+                require(["esri/map", "esri/layers/FeatureLayer", "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/ImageParameters",
+                    "esri/tasks/query", "esri/geometry/Extent", "esri/toolbars/draw", "esri/symbols/SimpleMarkerSymbol",
+                    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol",
+                    "esri/graphic", "dojo/_base/Color", "dojo/domReady!"],
+                    function (Map, FeatureLayer, ArcGISDynamicMapServiceLayer, ImageParameters, Query, Extent, Draw,
+                        SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Graphic, Color) {
+
+                        var selectionLayers = [];
+                        var message = "";
+
+                        var highlightPt = new SimpleMarkerSymbol().setColor(new Color([255, 0, 0])).setSize(8);
+                        var highlightMultiPt = new SimpleMarkerSymbol().setColor(new Color([255, 0, 0, 0.15])).setSize(16).setOutline(new SimpleLineSymbol().setColor(new Color([255, 0, 0])));
+                        var highlightPoly = new SimpleFillSymbol(SimpleFillSymbol.STYLE_SOLID,
+                            new SimpleLineSymbol(SimpleLineSymbol.STYLE_HORIZONTAL,
+                                new Color([255, 0, 0])),
+                            new Color([255, 0, 0, 0.15])
+                        ).setOutline(new SimpleLineSymbol().setColor(new Color([255, 0, 0])));
+                        var highlightLine = new SimpleLineSymbol().setColor(new Color([255, 0, 0]));
+
+                        map = new Map("map", {
+                            center: [-94.4, 36.4],
+                            basemap: "topo",
+                            zoom: 6,
+                            maxZoom: 16,
+                            minZoom: 0
+                        });
+
+                        var imgParams = new ImageParameters();
+                        imgParams.layerIds = [0];
+                        imgParams.layerOption = ImageParameters.LAYER_OPTION_SHOW;
+                        imgParams.transparent = true;
+
+                        // Create a visible layer for visualization. This layer will have no interactions
+                        var shownLayer1 = new ArcGISDynamicMapServiceLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer", {
+                            imageParameters: imgParams,
+                            opacity: 1.0
+                        });
+                        map.addLayer(shownLayer1);
+
+                        // Feature Layer is created to allow selection capabilities.
+                        var layer = new FeatureLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer/0", {
+                            outFields: ["*"]
+                        });
+                        selectionLayers.push(layer);
+
+                        for (var n = 0; n < selectionLayers.length; n++) {
+                            selectionLayers[n].on("selection-complete", getInfo);
+                        }
+
+                        var tb = new Draw(map);
+                        
+                        // tbAct variable helps to track whether the ouse is in Toolbar/Draw Mode or Navigation mode.
+                        var tbAct = false;
+
+                        tb.on("draw-end", function (extent) {
+                            var selectionQuery = new Query();
+                            selectionQuery.geometry = extent.geometry;
+                            for (var i = 0; i < selectionLayers.length; i++) {
+                                selectionLayers[i].selectFeatures(selectionQuery, FeatureLayer.SELECTION_ADD);
+                            }
+                        });
+
+
+                        document.getElementById("toolbarExtent").addEventListener("click", function () {
+                            startToolbar(Draw.EXTENT, "extent");
+                        }, false);
+
+
+                        document.getElementById("clearFeatures").addEventListener("click", function () {
+                            map.graphics.clear();
+                            message = "";
+                            document.getElementById("selected").innerHTML = "";
+                        }, false);
+
+
+                        function getInfo(feat) {
+                            var graphic;
+                            for (var i = 0; i < feat.features.length; i++) {
+                                var id = feat.features[i].attributes["areaname"];
+                                
+                                if (message.indexOf(id) === -1) {
+                                    message += id + ", ";
+
+                                    switch (feat.features[i].geometry.type) {
+                                        case "point":
+                                            graphic = new Graphic(feat.features[i].geometry, highlightPt);
+                                            break;
+                                        case "line":
+                                            graphic = new Graphic(feat.features[i].geometry, highlightLine);
+                                            break;
+                                        case "polyline":
+                                            graphic = new Graphic(feat.features[i].geometry, highlightLine);
+                                            break;
+                                        case "multipoint":
+                                            graphic = new Graphic(feat.features[i].geometry, highlightMultiPt);
+                                            break;
+                                        case "polygon":
+                                            graphic = new Graphic(feat.features[i].geometry, highlightPoly);
+                                            break;
+                                    }
+
+                                    graphic.setAttributes({ "id": id });
+                                    map.graphics.add(graphic);
+                                }
+                                else {
+                                    message = message.replace(id + ", ", "");
+
+                                    var graphicsArr = map.graphics.graphics;
+                                    for (var n = 0; n < graphicsArr.length; n++) {
+                                        if (graphicsArr[n].attributes !== undefined && graphicsArr[n].attributes.id === id) {
+                                            map.graphics.remove(graphicsArr[n]);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            document.getElementById("selected").innerHTML = message;
+                        }
+
+
+                        function startToolbar(drawType, strType) {
+                            if (!tbAct) {
+                                tb.activate(drawType);
+                                tbAct = true;
+                            }
+                            else {
+                                if (tb._geometryType != strType) {
+                                    tb.deactivate();
+                                    tb.activate(drawType);
+                                }
+                                else {
+                                    tb.deactivate();
+                                    tbAct = false;
+                                }
+                            }
+                        }
+                        
+                    });
+
+        </script>
+    </body>
+</html>
